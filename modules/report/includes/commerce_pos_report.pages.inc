@@ -380,6 +380,23 @@ function commerce_pos_report_get_totals($date_filter, $register_id) {
   $transaction_counts = array();
   $transaction_summary = array();
 
+  // Populate the arrays with the POS Payment methods.
+  $pos_methods = commerce_pos_get_payment_methods();
+  $currencies = commerce_currencies(TRUE);
+
+  foreach ($pos_methods as $pos_method) {
+    if (!empty($pos_method['status']) && intval($pos_method['status']) === COMMERCE_POS_PAYMENT_METHOD_STATUS_ENABLED) {
+      foreach (array_keys($currencies) as $currency_code) {
+        $totals[$currency_code][$pos_method['id']] = array(
+          CommercePosService::TRANSACTION_TYPE_SALE => 0,
+          CommercePosService::TRANSACTION_TYPE_RETURN => 0,
+        );
+      }
+      $transaction_summary[$pos_method['id']] = array();
+      $transaction_counts[$pos_method['id']] = 0;
+    }
+  }
+
   $visible_statuses = variable_get('commerce_pos_receipt_visible_payment_status', array(COMMERCE_PAYMENT_STATUS_SUCCESS, COMMERCE_PAYMENT_STATUS_VOID));
   $statuses = commerce_payment_transaction_statuses();
 
