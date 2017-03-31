@@ -212,7 +212,9 @@ class CommercePosTransactionBaseActions extends CommercePosTransactionBase imple
 
     if (module_exists('commerce_tax')) {
       foreach (commerce_tax_types() as $name => $type) {
-        commerce_tax_calculate_by_type($line_item, $name);
+        if (empty($type['display_inclusive'])) {
+          commerce_tax_calculate_by_type($line_item, $name);
+        }
       }
     }
 
