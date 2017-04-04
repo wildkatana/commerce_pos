@@ -25,7 +25,6 @@ function commerce_pos_settings($form, &$form_state) {
       '#options' => $index_options,
       '#default_value' => variable_get('commerce_pos_search_api_index', NULL),
     );
-
   }
 
   $form['commerce_pos_search_results_count'] = array(
@@ -101,6 +100,25 @@ function commerce_pos_settings($form, &$form_state) {
     );
   }
 
+  //Grab a list of payments
+  $payments = array();
+  foreach(commerce_pos_get_payment_options() as $payment){
+    $payments[$payment['id']] = $payment['title'];
+  }
+
+  $form['payments'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Payment Settings'
+  );
+
+  $form['payments']['commerce_pos_default_payment_method'] = array (
+    '#type' => 'select',
+    '#title' => t('Default Payment Method'),
+    '#description' => t('Select the default payment method.'),
+    '#options' => $payments,
+    '#default_value' => variable_get('commerce_pos_default_payment_method', 0),
+  );
+
   $form['actions'] = array(
     '#type' => 'actions',
   );
@@ -155,6 +173,8 @@ function commerce_pos_settings_submit($form, &$form_state) {
   variable_set('commerce_pos_search_results_count', $form_state['values']['commerce_pos_search_results_count']);
 
   variable_set('commerce_pos_available_products', $form_state['values']['commerce_pos_available_products']);
+
+  variable_set('commerce_pos_default_payment_method', $form_state['values']['commerce_pos_default_payment_method']);
 
   foreach (commerce_product_types() as $name => $type) {
     variable_set('commerce_pos_image_field_' . $name, $form_state['values']['commerce_pos_image_field_' . $name]);

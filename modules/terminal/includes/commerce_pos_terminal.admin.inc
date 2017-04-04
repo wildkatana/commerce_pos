@@ -161,7 +161,6 @@ function commerce_pos_terminal_settings_form_submit($form, &$form_state) {
       variable_set($setting, $form_state['values'][$setting]);
     }
   }
-
 }
 
 /**
