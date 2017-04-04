@@ -185,7 +185,29 @@ class CommercePosTransactionBaseActions extends CommercePosTransactionBase imple
 
     rules_invoke_event('commerce_product_calculate_sell_price', $line_item);
 
+    // Remove the 'display_inclusive' tax components before we add it.
+    if (FALSE && module_exists('commerce_tax')) {
+      $tax_components = commerce_tax_commerce_price_component_type_info();
+      foreach ($tax_components as $component_id => $tax_component) {
+        foreach (commerce_tax_types() as $name => $type) {
+          if (!empty($type['display_inclusive'])) {
+            // Check if this type is already included in the unit price.
+            foreach ($line_item_wrapper->commerce_unit_price->value()['data']['components'] as $unit_price_component) {
+              if ($unit_price_component['name'] == $component_id) {
+                // Remove this type from the components.
+                $line_item_wrapper->commerce_unit_price->data = commerce_price_component_delete($line_item_wrapper->commerce_unit_price->value(), $component_id);
+                // Also recalculate the price.
+                $new_component_total = commerce_price_component_total($line_item_wrapper->commerce_unit_price->value());
+                $line_item_wrapper->commerce_unit_price->amount = $new_component_total['amount'];
+              }
+            }
+          }
+        }
+      }
+    }
+
     $amount = $line_item_wrapper->commerce_unit_price->amount->raw();
+
     $currency = $line_item_wrapper->commerce_unit_price->currency_code->raw();
 
     // We "snapshot" the calculated sell price and use it as the line item's
