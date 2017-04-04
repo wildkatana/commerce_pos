@@ -622,18 +622,6 @@ function commerce_pos_get_payment_methods() {
 }
 
 /**
- * Returns default payment setting if set.
- * @return null
- */
-function commerce_pos_get_default_payment_option(){
-  $default_setting = variable_get('commerce_pos_default_payment_method');
-  if($default_setting == ''){
-    return null;
-  }
-  return $default_setting;
-}
-
-/**
  * Retrieves a list of payment options for the Point of Sale payment form.
  */
 function commerce_pos_get_payment_options() {
