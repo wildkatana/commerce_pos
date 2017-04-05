@@ -1,0 +1,345 @@
+<?php
+
+/**
+ * @file
+ * Core hooks and utility functions for commerce_pos_gratuity.
+ */
+
+/**
+ * Implements hook_commerce_pos_transaction_base_info().
+ */
+function commerce_pos_gratuity_commerce_pos_transaction_base_info() {
+  return array(
+    'commerce_pos_gratuity_base' => array(
+      'class' => 'CommercePosGratuityBase',
+      'types' => array(
+        CommercePosService::TRANSACTION_TYPE_SALE,
+        CommercePosService::TRANSACTION_TYPE_RETURN,
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_commerce_line_item_type_info().
+ */
+function commerce_pos_gratuity_commerce_line_item_type_info() {
+  return array(
+    'commerce_pos_gratuity' => array(
+      'type' => 'commerce_pos_gratuity',
+      'name' => t('POS gratuity'),
+      'description' => t('Line item for fixed POS gratuity amounts.'),
+      'add_form_submit_value' => t('Add POS gratuity'),
+      'base' => 'commerce_pos_gratuity_line_item',
+    ),
+  );
+}
+
+/**
+ * Determine the gratuity's line item title.
+ *
+ * @return string
+ *   The line item title.
+ */
+function commerce_pos_gratuity_line_item_title() {
+  return t('Order gratuity');
+}
+
+/**
+ * Implements hook_commerce_price_formatted_components_alter().
+ */
+function commerce_pos_gratuity_commerce_price_formatted_components_alter(&$components, $price, $entity) {
+  if (isset($price['data']['components'])) {
+    // Loop into price components and alter the component title if the gratuity
+    // component label is found.
+    foreach ($price['data']['components'] as $component) {
+      if (!isset($component['price']['data']['pos_gratuity_component_title'])) {
+        continue;
+      }
+
+      $components[$component['name']]['title'] = $component['price']['data']['pos_gratuity_component_title'];
+
+      if (empty($price['#commerce_pos_print']) && strpos($component['name'], 'pos_order_gratuity') !== FALSE) {
+        // Add action button for removing order gratuity.
+        $components[$component['name']]['action'] = '<a href="#" class="commerce-pos-remove-order-gratuity button-link small">' . t('remove') . '</a>';
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function commerce_pos_gratuity_form_alter(&$form, &$form_state, $form_id) {
+  switch ($form_id) {
+    case 'commerce_pos_sale':
+    case 'commerce_pos_return':
+      _commerce_pos_gratuity_transaction_form_alter($form, $form_state);
+      break;
+
+    case 'commerce_pos_sale_payment':
+      _commerce_pos_gratuity_payment_form_alter($form, $form_state);
+      break;
+
+    case 'commerce_pos_settings':
+      _commerce_pos_gratuity_settings_form_alter($form, $form_state);
+      break;
+  }
+}
+
+/**
+ * Form alter manually added by a form_alter hook above.
+ */
+function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
+  $form['#attached']['js'][] = drupal_get_path('module', 'commerce_pos_gratuity') . '/js/commerce_pos_gratuity.js';
+
+  $form_ajax = array(
+    'wrapper' => 'commerce-pos-pay-form-wrapper',
+    'callback' => 'commerce_pos_payment_wrapper_js',
+  );
+
+  if (isset($form['balance']) && isset($form['balance']['actions'])) {
+    $form['balance']['actions']['remove_order_gratuity'] = array(
+      '#type' => 'submit',
+      '#value' => t('Remove Order Gratuity'),
+      '#attributes' => array(
+        'class' => array(
+          'commerce-pos-payment-btn',
+          'commerce-pos-remove-order-gratuity'
+        ),
+        'style' => array('display: none')
+      ),
+      '#submit' => array('commerce_pos_transaction_remove_order_gratuity_submit'),
+      '#ajax' => array_merge($form_ajax, array('event' => 'remove_order_gratuity')),
+      '#limit_validation_errors' => array(),
+      '#element_key' => 'remove-order-gratuity',
+    );
+  }
+}
+
+/**
+ * Adds gratuity functionality to the POS transaction forms.
+ */
+function _commerce_pos_gratuity_transaction_form_alter(&$form, &$form_state) {
+  $form['#attached']['js'][] = drupal_get_path('module', 'commerce_pos_gratuity') . '/js/commerce_pos_gratuity.js';
+
+  if (isset($form['line_items'])) {
+    $wrapper_ajax = array(
+      'wrapper' => $form_state['wrapper_id'],
+      'callback' => 'commerce_pos_gratuity_wrapper_js',
+    );
+
+    // Add a section for order gratuities.
+    if (!empty($form['transaction_options']['actions'])) {
+      // Add remove order gratuity hidden button.
+      $form['transaction_options']['actions']['remove_order_gratuity'] = array(
+        '#type' => 'submit',
+        '#value' => t('Remove Order Gratuity'),
+        '#attributes' => array(
+          'class' => array(
+            'commerce-pos-transaction-btn',
+            'commerce-pos-remove-order-gratuity'
+          ),
+          'style' => array('display: none')
+        ),
+        '#submit' => array('commerce_pos_transaction_remove_order_gratuity_submit'),
+        '#ajax' => array_merge($wrapper_ajax, array('event' => 'remove_order_gratuity')),
+        '#limit_validation_errors' => array(),
+        '#element_key' => 'remove-order-gratuity',
+      );
+
+      $form['transaction_options']['actions']['gratuity'] = array(
+        '#type' => 'button',
+        '#value' => t('Gratuity'),
+        '#element_key' => 'toggle-order-gratuity',
+        '#attributes' => array(
+          'class' => array('commerce-pos-transaction-btn'),
+        ),
+        '#ajax' => array(
+          'callback' => 'commerce_pos_gratuity_order_gratuity_js',
+          'wrapper' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
+          'effect' => 'slide',
+        ),
+      );
+
+      $form['transaction_options']['actions']['add_order_gratuity'] = array(
+        '#type' => 'container',
+        '#id' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
+      );
+
+      if (!empty($form_state['triggering_element']['#element_key']) && $form_state['triggering_element']['#element_key'] == 'toggle-order-gratuity') {
+        $gratuity_data = $form_state['transaction']->doAction('getExistingOrderGratuityAmount');
+
+        // Change gratuity button to toggle.
+        $form['transaction_options']['actions']['gratuity']['#element_key'] = 'toggle-order-gratuity-hide';
+
+        $form['transaction_options']['actions']['add_order_gratuity']['amount'] = array(
+          '#title' => t('Add Gratuity to Order'),
+          '#type' => 'textfield',
+          '#size' => 5,
+          '#attributes' => array(
+            'autofocus' => 'autofocus',
+          ),
+          '#default_value' => $gratuity_data ? $gratuity_data['amount'] : NULL,
+          '#element_validate' => array('commerce_pos_gratuity_validate_order_gratuity'),
+        );
+
+        $form['transaction_options']['actions']['add_order_gratuity']['percent'] = array(
+          '#type' => 'button',
+          '#size' => 5,
+          '#value' => '%',
+          '#ajax' => $wrapper_ajax,
+          '#element_key' => 'add-order-percent-gratuity',
+        );
+
+        $form['transaction_options']['actions']['add_order_gratuity']['fixed'] = array(
+          '#type' => 'button',
+          '#size' => 5,
+          '#value' => '$',
+          '#ajax' => $wrapper_ajax,
+          '#element_key' => 'add-order-fixed-gratuity',
+        );
+
+        if ($gratuity_data) {
+          $form['transaction_options']['actions']['add_order_gratuity'][$gratuity_data['type']]['#attributes']['class'][] = 'active';
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Validates the gratuity being added to an order.
+ */
+function commerce_pos_gratuity_validate_order_gratuity($element, &$form_state, $form) {
+  $gratuity_amount = $element['#value'];
+
+  // If this is a fixed gratuity figure out the percentage that's being gratuitied from the price.
+  if ($form_state['triggering_element']['#element_key'] == 'add-order-fixed-gratuity') {
+    $order_total_amount = _commerce_pos_gratuity_order_total($form_state);
+    $gratuity_amount = ($gratuity_amount / $order_total_amount) * 100;
+  }
+
+  // Check that the gratuity amount doesn't exceed the limit if one is set.
+  $max_gratuity = variable_get('commerce_pos_gratuity_max_order_gratuity', NULL);
+
+  if ($max_gratuity && $gratuity_amount > $max_gratuity) {
+    form_error($element, t('Order gratuities can not exceed @percent% of the order total.',
+      array('@percent' => $max_gratuity)));
+  }
+}
+
+/**
+ * Gets the order total without any current order gratuities.
+ */
+function _commerce_pos_gratuity_order_total($form_state) {
+  $line_items = $form_state['order_wrapper']->commerce_line_items->value();
+
+  // Calculate the order total minus any current order gratuity.
+  foreach ($line_items as $key => $line_item) {
+    if ($line_item->type == 'commerce_pos_gratuity') {
+      unset($line_items[$key]);
+    }
+  }
+
+  // Calculate the order total from the remaining line items.
+  $order_total = commerce_line_items_total($line_items);
+
+  return $order_total['amount'] / 100;
+}
+
+/**
+ * Adds a gratuity settings pane to the main POS settings form.
+ */
+function _commerce_pos_gratuity_settings_form_alter(&$form, &$form_state) {
+  $form['gratuities'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Gratuities'),
+  );
+
+  $form['gratuities']['commerce_pos_gratuity_max_order_gratuity'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Maximum order gratuity value.'),
+    '#description' => t('Limit the % amount that orders can be gratuitied. This limit will apply to both percentage and fixed gratuities. Leave blank to impose no limits.'),
+    '#default_value' => variable_get('commerce_pos_gratuity_max_order_gratuity', NULL),
+    '#maxlength' => 3,
+    '#size' => 3,
+    '#field_suffix' => '%',
+  );
+
+  $form['#submit'][] = 'commerce_pos_gratuity_settings_form_validate';
+  $form['#submit'][] = 'commerce_pos_gratuity_settings_form_submit';
+}
+
+/**
+ * Validation callback for the gratuity settings form.
+ */
+function commerce_pos_gratuity_settings_form_validate($form, &$form_state) {
+  // Make sure an integer was entered.
+  if (!empty($form_state['values']['commerce_pos_gratuity_max_order_gratuity']) &&
+    !is_numeric($form_state['values']['commerce_pos_gratuity_max_order_gratuity'])) {
+    form_set_error('commerce_pos_gratuity_max_order_gratuity', t('Order gratuity maximum needs to be an integer.'));
+  }
+}
+
+/**
+ * Submission callback for the gratuity settings form.
+ */
+function commerce_pos_gratuity_settings_form_submit($form, &$form_state) {
+  // Drop any decimal values to keep things simple.
+  variable_set('commerce_pos_gratuity_max_order_gratuity', floor($form_state['values']['commerce_pos_gratuity_max_order_gratuity']));
+}
+
+/**
+ * Implements hook_commerce_pos_sale_form_ajax_alter().
+ */
+function commerce_pos_gratuity_commerce_pos_sale_form_ajax_alter(&$form_state, $triggering_element) {
+  if (!empty($triggering_element['#element_key'])) {
+    switch ($triggering_element['#element_key']) {
+      case 'add-order-percent-gratuity':
+      case 'add-order-fixed-gratuity':
+        $gratuity_amount = $form_state['values']['transaction_options']['actions']['add_order_gratuity']['amount'];
+
+        if ($triggering_element['#element_key'] == 'add-order-percent-gratuity') {
+          $gratuity_type = 'percent';
+          // Convert percent 100% style to 1.0 style.
+          $gratuity_amount /= 100;
+        }
+        else {
+          $gratuity_type = 'fixed';
+          // Convert the amount into cents, as we expected it to be provided
+          // in dollars.
+          $gratuity_amount *= 100;
+        }
+
+        $form_state['transaction']->doAction('addOrderGratuity', $gratuity_type, $gratuity_amount);
+        $form_state['order_updated'] = TRUE;
+
+        break;
+    }
+  }
+}
+
+/**
+ * AJAX callback for the order gratuities section.
+ */
+function commerce_pos_gratuity_order_gratuity_js($form, &$form_state) {
+  return $form['transaction_options']['actions']['add_order_gratuity'];
+}
+
+/**
+ * AJAX callback to return the entire form wrapper.
+ */
+function commerce_pos_gratuity_wrapper_js($form, &$form_state) {
+  return $form;
+}
+
+/**
+ * Submit handler that gets added to remove_order_gratuity_form via form_alter.
+ */
+function commerce_pos_transaction_remove_order_gratuity_submit($form, &$form_state) {
+  // Setting a gratuity of 0 removes it.
+  $form_state['transaction']->doAction('addOrderGratuity', 'fixed', 0);
+
+  $form_state['rebuild'] = TRUE;
+}
