@@ -25,7 +25,11 @@ class CommercePosDiscountService {
    *   The price component, or FALSE if none was found.
    */
   static public function getPosDiscountComponent(EntityMetadataWrapper $price_wrapper, $discount_name) {
-    $data = (array) $price_wrapper->data->value() + array('components' => array());
+    $price_entity = $price_wrapper->value();
+    if (!isset($price_entity['data'])) {
+      $price_entity['data'] = array();
+    }
+    $data = (array) $price_entity['data'] + array('components' => array());
 
     // Look for our discount in each of the price components.
     foreach ($data['components'] as $key => $component) {
@@ -156,6 +160,7 @@ class CommercePosDiscountService {
 
     $component_data = array(
       'pos_discount_type' => 'fixed',
+      'pos_discount_rate' => $discount_amount,
     );
 
     switch ($wrapper->type()) {
