@@ -130,6 +130,7 @@ class CommercePosGratuityService {
 
     $component_data = array(
       'pos_gratuity_type' => 'fixed',
+      'pos_gratuity_rate' => $gratuity_amount,
     );
 
     $gratuity_name = self::ORDER_GRATUITY_NAME;
@@ -217,8 +218,6 @@ class CommercePosGratuityService {
     $type = check_plain('gratuity|' . $gratuity_name);
     $line_item_wrapper->commerce_unit_price->data = commerce_price_component_add($price, $type, $gratuity_amount, TRUE, TRUE);
 
-    self::calculateTaxes($line_item_wrapper);
-
     // Update the line item total.
     self::updateLineItemTotal($line_item_wrapper);
   }
@@ -276,8 +275,6 @@ class CommercePosGratuityService {
 
     // Add the gratuity price component.
     self::addPriceComponent($gratuity_line_item_wrapper, $gratuity_name, $gratuity_amount, $data);
-
-    self::calculateTaxes($gratuity_line_item_wrapper);
 
     // Save the line item and add it to the order.
     $gratuity_line_item_wrapper->save();
@@ -397,70 +394,6 @@ class CommercePosGratuityService {
             self::applyGratuity($order_wrapper, $price_component['price']['data']['pos_gratuity_type'], $price_component['price']['data']['pos_gratuity_rate']);
           }
         }
-      }
-    }
-  }
-
-  /**
-   * Remove gratuity components from a given price and recalculate the total.
-   *
-   * @param object $price_wrapper
-   *   Wrapped commerce price.
-   */
-  static public function removeGratuityComponents($price_wrapper, $gratuity_name_to_remove) {
-    $gratuity_amounts = 0;
-
-    $data = (array) $price_wrapper->data->value() + array('components' => array());
-    $component_removed = FALSE;
-    // Remove price components belonging to order gratuities.
-    foreach ($data['components'] as $key => $component) {
-      $remove = FALSE;
-
-      // Remove all gratuity components.
-      if (!empty($component['price']['data']['gratuity_name'])) {
-        $gratuity_name = $component['price']['data']['gratuity_name'];
-
-        if ($gratuity_name_to_remove == $gratuity_name) {
-          $remove = TRUE;
-        }
-      }
-
-      if ($remove) {
-        $gratuity_amounts += $component['price']['amount'];
-
-        unset($data['components'][$key]);
-        $component_removed = TRUE;
-      }
-    }
-    // Don't alter the price components if no components were removed.
-    if (!$component_removed) {
-      return;
-    }
-
-    // Re-save the price without the gratuities (if existed).
-    $price_wrapper->data->set($data);
-
-    // Re-set the total price.
-    $new_total = $price_wrapper->amount->raw() - $gratuity_amounts;
-    $price_wrapper->amount->set($new_total);
-  }
-
-  /**
-   * Calculate the taxes on a given line item.
-   *
-   * @param object $line_item_wrapper
-   *   A metadata wrapper representing the line item.
-   */
-  protected static function calculateTaxes($line_item_wrapper) {
-    if (module_exists('commerce_tax')) {
-      module_load_include('inc', 'commerce_tax', 'commerce_tax.rules');
-
-      // First remove all existing tax components from the line item if any
-      // exist.
-      commerce_tax_remove_taxes($line_item_wrapper, FALSE, array_keys(commerce_tax_rates()));
-
-      foreach (commerce_tax_types() as $name => $type) {
-        commerce_tax_calculate_by_type($line_item_wrapper->value(), $name);
       }
     }
   }

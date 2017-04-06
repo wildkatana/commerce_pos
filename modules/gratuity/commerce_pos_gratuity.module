@@ -115,6 +115,50 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
       '#element_key' => 'remove-order-gratuity',
     );
   }
+
+  if (isset($form_state['transaction'])) {
+    $order_value = $form_state['order_wrapper']->value();
+    $order_balance = commerce_payment_order_balance($order_value);
+    $form['balance']['actions']['apply_change_gratuity'] = array(
+      '#type' => 'submit',
+      '#value' => t('Apply Change as Gratuity'),
+      '#access' => $order_balance['amount'] < 0,
+      '#validate' => array('commerce_pos_gratuity_payment_form_validate'),
+      '#submit' => array('commerce_pos_gratuity_payment_form_submit'),
+      '#attributes' => array(
+        'class' => array('commerce-pos-transaction-btn'),
+      ),
+      '#weight' => 0,
+    );
+  }
+}
+
+/**
+ * Validation callback for the apply change as gratuity button.
+ *
+ * @see _commerce_pos_gratuity_payment_form_alter()
+ */
+function commerce_pos_gratuity_payment_form_validate($form, &$form_state) {
+  // Make sure the amount doesn't exceed the max allowed gratuity.
+  $max = variable_get('commerce_pos_gratuity_max_order_gratuity', 0);
+  $order_value = $form_state['order_wrapper']->value();
+  $order_balance = commerce_payment_order_balance($order_value);
+
+  if (!empty($max) && abs($order_balance['amount']) > $max) {
+    form_set_error('apply_change_gratuity', t("Maximum allowed tip exceeded."));
+  }
+}
+
+/**
+ * Submission callback for the apply change as gratuity button.
+ *
+ * @see _commerce_pos_gratuity_payment_form_alter()
+ */
+function commerce_pos_gratuity_payment_form_submit($form, &$form_state) {
+  // Apply the negative balance as a gratuity.
+  $order_value = $form_state['order_wrapper']->value();
+  $order_balance = commerce_payment_order_balance($order_value);
+  $form_state['transaction']->doAction('addOrderGratuity', 'fixed', abs($order_balance['amount']));
 }
 
 /**
