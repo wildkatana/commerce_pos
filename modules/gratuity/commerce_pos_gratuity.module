@@ -72,11 +72,6 @@ function commerce_pos_gratuity_commerce_price_formatted_components_alter(&$compo
  */
 function commerce_pos_gratuity_form_alter(&$form, &$form_state, $form_id) {
   switch ($form_id) {
-    case 'commerce_pos_sale':
-    case 'commerce_pos_return':
-      _commerce_pos_gratuity_transaction_form_alter($form, $form_state);
-      break;
-
     case 'commerce_pos_sale_payment':
       _commerce_pos_gratuity_payment_form_alter($form, $form_state);
       break;
@@ -98,6 +93,7 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
     'callback' => 'commerce_pos_payment_wrapper_js',
   );
 
+  // Add the hidden remove gratuity button that gets triggered via JS.
   if (isset($form['balance']) && isset($form['balance']['actions'])) {
     $form['balance']['actions']['remove_order_gratuity'] = array(
       '#type' => 'submit',
@@ -116,6 +112,7 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
     );
   }
 
+  // Show the apply change as gratuity link.
   if (isset($form_state['transaction'])) {
     $order_value = $form_state['order_wrapper']->value();
     $order_balance = commerce_payment_order_balance($order_value);
@@ -130,6 +127,67 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
       ),
       '#weight' => 0,
     );
+  }
+
+
+  // Show the add gratuity button.
+  if (!empty($form['balance']['actions'])) {
+    $form['balance']['actions']['gratuity'] = array(
+      '#type' => 'button',
+      '#value' => t('Gratuity'),
+      '#element_key' => 'toggle-order-gratuity',
+      '#attributes' => array(
+        'class' => array('commerce-pos-transaction-btn'),
+      ),
+      '#ajax' => array(
+        'callback' => 'commerce_pos_gratuity_order_gratuity_js',
+        'wrapper' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
+        'effect' => 'slide',
+      ),
+    );
+
+    $form['balance']['actions']['add_order_gratuity'] = array(
+      '#type' => 'container',
+      '#id' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
+    );
+
+    if (!empty($form_state['triggering_element']['#element_key']) && $form_state['triggering_element']['#element_key'] == 'toggle-order-gratuity') {
+      $gratuity_data = $form_state['transaction']->doAction('getExistingOrderGratuityAmount');
+
+      // Change gratuity button to toggle.
+      $form['balance']['actions']['gratuity']['#element_key'] = 'toggle-order-gratuity-hide';
+
+      $form['balance']['actions']['add_order_gratuity']['gratuity_amount'] = array(
+        '#title' => t('Add Gratuity to Order'),
+        '#type' => 'textfield',
+        '#size' => 5,
+        '#attributes' => array(
+          'autofocus' => 'autofocus',
+        ),
+        '#default_value' => $gratuity_data ? $gratuity_data['amount'] : NULL,
+        '#element_validate' => array('commerce_pos_gratuity_validate_order_gratuity'),
+      );
+
+      $form['balance']['actions']['add_order_gratuity']['percent'] = array(
+        '#type' => 'button',
+        '#size' => 5,
+        '#value' => '%',
+        '#ajax' => $form_ajax,
+        '#element_key' => 'add-order-percent-gratuity',
+      );
+
+      $form['balance']['actions']['add_order_gratuity']['fixed'] = array(
+        '#type' => 'button',
+        '#size' => 5,
+        '#value' => '$',
+        '#ajax' => $form_ajax,
+        '#element_key' => 'add-order-fixed-gratuity',
+      );
+
+      if ($gratuity_data) {
+        $form['balance']['actions']['add_order_gratuity'][$gratuity_data['type']]['#attributes']['class'][] = 'active';
+      }
+    }
   }
 }
 
@@ -159,97 +217,6 @@ function commerce_pos_gratuity_payment_form_submit($form, &$form_state) {
   $order_value = $form_state['order_wrapper']->value();
   $order_balance = commerce_payment_order_balance($order_value);
   $form_state['transaction']->doAction('addOrderGratuity', 'fixed', abs($order_balance['amount']));
-}
-
-/**
- * Adds gratuity functionality to the POS transaction forms.
- */
-function _commerce_pos_gratuity_transaction_form_alter(&$form, &$form_state) {
-  $form['#attached']['js'][] = drupal_get_path('module', 'commerce_pos_gratuity') . '/js/commerce_pos_gratuity.js';
-
-  if (isset($form['line_items'])) {
-    $wrapper_ajax = array(
-      'wrapper' => $form_state['wrapper_id'],
-      'callback' => 'commerce_pos_gratuity_wrapper_js',
-    );
-
-    // Add a section for order gratuities.
-    if (!empty($form['transaction_options']['actions'])) {
-      // Add remove order gratuity hidden button.
-      $form['transaction_options']['actions']['remove_order_gratuity'] = array(
-        '#type' => 'submit',
-        '#value' => t('Remove Order Gratuity'),
-        '#attributes' => array(
-          'class' => array(
-            'commerce-pos-transaction-btn',
-            'commerce-pos-remove-order-gratuity'
-          ),
-          'style' => array('display: none')
-        ),
-        '#submit' => array('commerce_pos_transaction_remove_order_gratuity_submit'),
-        '#ajax' => array_merge($wrapper_ajax, array('event' => 'remove_order_gratuity')),
-        '#limit_validation_errors' => array(),
-        '#element_key' => 'remove-order-gratuity',
-      );
-
-      $form['transaction_options']['actions']['gratuity'] = array(
-        '#type' => 'button',
-        '#value' => t('Gratuity'),
-        '#element_key' => 'toggle-order-gratuity',
-        '#attributes' => array(
-          'class' => array('commerce-pos-transaction-btn'),
-        ),
-        '#ajax' => array(
-          'callback' => 'commerce_pos_gratuity_order_gratuity_js',
-          'wrapper' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
-          'effect' => 'slide',
-        ),
-      );
-
-      $form['transaction_options']['actions']['add_order_gratuity'] = array(
-        '#type' => 'container',
-        '#id' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
-      );
-
-      if (!empty($form_state['triggering_element']['#element_key']) && $form_state['triggering_element']['#element_key'] == 'toggle-order-gratuity') {
-        $gratuity_data = $form_state['transaction']->doAction('getExistingOrderGratuityAmount');
-
-        // Change gratuity button to toggle.
-        $form['transaction_options']['actions']['gratuity']['#element_key'] = 'toggle-order-gratuity-hide';
-
-        $form['transaction_options']['actions']['add_order_gratuity']['amount'] = array(
-          '#title' => t('Add Gratuity to Order'),
-          '#type' => 'textfield',
-          '#size' => 5,
-          '#attributes' => array(
-            'autofocus' => 'autofocus',
-          ),
-          '#default_value' => $gratuity_data ? $gratuity_data['amount'] : NULL,
-          '#element_validate' => array('commerce_pos_gratuity_validate_order_gratuity'),
-        );
-
-        $form['transaction_options']['actions']['add_order_gratuity']['percent'] = array(
-          '#type' => 'button',
-          '#size' => 5,
-          '#value' => '%',
-          '#ajax' => $wrapper_ajax,
-          '#element_key' => 'add-order-percent-gratuity',
-        );
-
-        $form['transaction_options']['actions']['add_order_gratuity']['fixed'] = array(
-          '#type' => 'button',
-          '#size' => 5,
-          '#value' => '$',
-          '#ajax' => $wrapper_ajax,
-          '#element_key' => 'add-order-fixed-gratuity',
-        );
-
-        if ($gratuity_data) {
-          $form['transaction_options']['actions']['add_order_gratuity'][$gratuity_data['type']]['#attributes']['class'][] = 'active';
-        }
-      }
-    }
-  }
 }
 
 /**
@@ -342,7 +309,7 @@ function commerce_pos_gratuity_commerce_pos_sale_form_ajax_alter(&$form_state, $
     switch ($triggering_element['#element_key']) {
       case 'add-order-percent-gratuity':
       case 'add-order-fixed-gratuity':
-        $gratuity_amount = $form_state['values']['transaction_options']['actions']['add_order_gratuity']['amount'];
+        $gratuity_amount = $form_state['values']['gratuity_amount'];
 
         if ($triggering_element['#element_key'] == 'add-order-percent-gratuity') {
           $gratuity_type = 'percent';
@@ -357,8 +324,15 @@ function commerce_pos_gratuity_commerce_pos_sale_form_ajax_alter(&$form_state, $
         }
 
         $form_state['transaction']->doAction('addOrderGratuity', $gratuity_type, $gratuity_amount);
-        $form_state['order_updated'] = TRUE;
 
+        // Reload the order so it displays properly.
+        if ($order = $form_state['transaction']->getOrder()) {
+          if (!empty($form_state['order_updated'])) {
+            commerce_order_calculate_total($order);
+          }
+
+          $form_state['order_wrapper'] = entity_metadata_wrapper('commerce_order', $order);
+        }
         break;
     }
   }
@@ -368,14 +342,7 @@ function commerce_pos_gratuity_commerce_pos_sale_form_ajax_alter(&$form_state, $
  * AJAX callback for the order gratuities section.
  */
 function commerce_pos_gratuity_order_gratuity_js($form, &$form_state) {
-  return $form['transaction_options']['actions']['add_order_gratuity'];
-}
-
-/**
- * AJAX callback to return the entire form wrapper.
- */
-function commerce_pos_gratuity_wrapper_js($form, &$form_state) {
-  return $form;
+  return $form['balance']['actions']['add_order_gratuity'];
 }
 
 /**
