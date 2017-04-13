@@ -68,6 +68,31 @@ function commerce_pos_gratuity_commerce_price_formatted_components_alter(&$compo
 }
 
 /**
+ * Implements hook_commerce_pos_balance_summary_row_info_alter().
+ */
+function commerce_pos_gratuity_commerce_pos_balance_summary_row_info_alter(&$rows, $totals, $order) {
+  foreach ($rows as &$row) {
+    if (in_array('order-change', $row['class'])) {
+      // Add action button for applying change as gratuity.
+      $new_action = array(
+        array(
+          'data' => '<a href="#" class="commerce-pos-apply-change-gratuity button-link small">' . t('add as gratuity') . '</a>',
+          'class' => array('action'),
+        ),
+      );
+      array_splice($row['data'], 1, 0, $new_action);
+    }
+    else {
+      // We have to add an extra column because these rows only have 2 columns.
+      // A better way to do this would be to add the support for an action
+      // column into the core commerce_pos module, similar to how it works with
+      // components, but for now I'm putting it here to reduce churn.
+      array_splice($row['data'], 1, 0, '');
+    }
+  }
+}
+
+/**
  * Implements hook_form_alter().
  */
 function commerce_pos_gratuity_form_alter(&$form, &$form_state, $form_id) {
@@ -101,9 +126,9 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
       '#attributes' => array(
         'class' => array(
           'commerce-pos-payment-btn',
-          'commerce-pos-remove-order-gratuity'
+          'commerce-pos-remove-order-gratuity',
         ),
-        'style' => array('display: none')
+        'style' => array('display: none'),
       ),
       '#submit' => array('commerce_pos_transaction_remove_order_gratuity_submit'),
       '#ajax' => array_merge($form_ajax, array('event' => 'remove_order_gratuity')),
@@ -112,21 +137,29 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
     );
   }
 
-  // Show the apply change as gratuity link.
-  if (isset($form_state['transaction'])) {
-    $order_value = $form_state['order_wrapper']->value();
-    $order_balance = commerce_payment_order_balance($order_value);
-    $form['balance']['actions']['apply_change_gratuity'] = array(
-      '#type' => 'submit',
-      '#value' => t('Apply Change as Gratuity'),
-      '#access' => $order_balance['amount'] < 0,
-      '#validate' => array('commerce_pos_gratuity_payment_form_validate'),
-      '#submit' => array('commerce_pos_gratuity_payment_form_submit'),
-      '#attributes' => array(
-        'class' => array('commerce-pos-transaction-btn'),
-      ),
-      '#weight' => 0,
-    );
+  // Add the hidden apply change as gratuity button that gets triggered via JS.
+  if (isset($form['balance']) && isset($form['balance']['actions'])) {
+    if (isset($form_state['transaction'])) {
+      $order_value = $form_state['order_wrapper']->value();
+      $order_balance = commerce_payment_order_balance($order_value);
+      $form['balance']['actions']['apply_change_gratuity'] = array(
+        '#type' => 'submit',
+        '#value' => t('Apply Change as Gratuity'),
+        '#attributes' => array(
+          'class' => array(
+            'commerce-pos-payment-btn',
+            'commerce-pos-apply-change-gratuity',
+          ),
+          'style' => array('display: none'),
+        ),
+        '#submit' => array('commerce_pos_gratuity_payment_form_submit'),
+        '#ajax' => array_merge($form_ajax, array('event' => 'apply_change_gratuity')),
+        '#validate' => array('commerce_pos_gratuity_payment_form_validate'),
+        '#limit_validation_errors' => array(array('apply_change_gratuity')),
+        '#element_key' => 'apply-change-gratuity',
+        '#access' => $order_balance['amount'] < 0,
+      );
+    }
   }
 
 
@@ -217,6 +250,16 @@ function commerce_pos_gratuity_payment_form_submit($form, &$form_state) {
   $order_value = $form_state['order_wrapper']->value();
   $order_balance = commerce_payment_order_balance($order_value);
   $form_state['transaction']->doAction('addOrderGratuity', 'fixed', abs($order_balance['amount']));
+  $form_state['rebuild'] = TRUE;
+
+  // Reload the order so it displays properly.
+  if ($order = $form_state['transaction']->getOrder()) {
+    if (!empty($form_state['order_updated'])) {
+      commerce_order_calculate_total($order);
+    }
+
+    $form_state['order_wrapper'] = entity_metadata_wrapper('commerce_order', $order);
+  }
 }
 
 /**

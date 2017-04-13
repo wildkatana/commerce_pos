@@ -10,6 +10,11 @@
 
         $('.commerce-pos-remove-order-gratuity').trigger('remove_order_gratuity');
       });
+
+      $('.commerce-pos-apply-change-gratuity', context).click(function(event){
+        event.preventDefault();
+        $('.commerce-pos-apply-change-gratuity').trigger('apply_change_gratuity');
+      });
     }
   };
 
