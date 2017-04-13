@@ -165,6 +165,10 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
 
   // Show the add gratuity button.
   if (!empty($form['balance']['actions'])) {
+    $form['balance']['actions']['finish']['#weight'] = 0;
+    $form['balance']['actions']['park']['#weight'] = 1;
+    $form['balance']['actions']['void']['#weight'] = 2;
+    $form['balance']['actions']['customer']['#weight'] = 4;
     $form['balance']['actions']['gratuity'] = array(
       '#type' => 'button',
       '#value' => t('Gratuity'),
@@ -177,10 +181,12 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
         'wrapper' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
         'effect' => 'slide',
       ),
+      '#weight' => 3,
     );
 
     $form['balance']['actions']['add_order_gratuity'] = array(
       '#type' => 'container',
+      '#weight' => 3,
       '#id' => 'commerce-pos-gratuity-add-order-gratuity-wrapper',
     );
 
