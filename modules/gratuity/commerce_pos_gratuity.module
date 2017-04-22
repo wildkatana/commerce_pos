@@ -236,13 +236,17 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
  * @see _commerce_pos_gratuity_payment_form_alter()
  */
 function commerce_pos_gratuity_payment_form_validate($form, &$form_state) {
-  // Make sure the amount doesn't exceed the max allowed gratuity.
-  $max = variable_get('commerce_pos_gratuity_max_order_gratuity', 0);
-  $order_value = $form_state['order_wrapper']->value();
-  $order_balance = commerce_payment_order_balance($order_value);
+  // Check that the gratuity amount doesn't exceed the limit if one is set.
+  if ($max_gratuity = variable_get('commerce_pos_gratuity_max_order_gratuity', NULL)) {
+    $order_value = $form_state['order_wrapper']->value();
+    $order_total_amount = _commerce_pos_gratuity_order_total($form_state);
+    $order_balance = commerce_payment_order_balance($order_value);
+    $gratuity_amount = abs($order_balance['amount']);
+    $max_gratuity_amount = $order_total_amount * $max_gratuity;
 
-  if (!empty($max) && abs($order_balance['amount']) > $max) {
-    form_set_error('apply_change_gratuity', t("Maximum allowed tip exceeded."));
+    if ($gratuity_amount > $max_gratuity_amount) {
+      form_set_error('apply_change_gratuity', t('Order gratuities can not exceed @percent% of the order total.', array('@percent' => $max_gratuity)));
+    }
   }
 }
 
