@@ -196,8 +196,12 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
       // Change gratuity button to toggle.
       $form['balance']['actions']['gratuity']['#element_key'] = 'toggle-order-gratuity-hide';
 
+      $form['balance']['actions']['add_order_gratuity']['gratuity_label'] = array(
+        '#markup' => t("Add Gratuity to Order"),
+        '#prefix' => "<div class='commerce-pos-gratuity-label'>",
+        '#suffix' => "</div>",
+      );
       $form['balance']['actions']['add_order_gratuity']['gratuity_amount'] = array(
-        '#title' => t('Add Gratuity to Order'),
         '#type' => 'textfield',
         '#size' => 5,
         '#attributes' => array(
@@ -205,6 +209,8 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
         ),
         '#default_value' => $gratuity_data ? $gratuity_data['amount'] : NULL,
         '#element_validate' => array('commerce_pos_gratuity_validate_order_gratuity'),
+        '#prefix' => "<div class='commerce-pos-gratuity-input'>",
+        '#suffix' => "</div>",
       );
 
       $form['balance']['actions']['add_order_gratuity']['percent'] = array(
@@ -213,6 +219,8 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
         '#value' => '%',
         '#ajax' => $form_ajax,
         '#element_key' => 'add-order-percent-gratuity',
+        '#prefix' => "<div class='commerce-pos-gratuity-percent-button'>",
+        '#suffix' => "</div>",
       );
 
       $form['balance']['actions']['add_order_gratuity']['fixed'] = array(
@@ -221,6 +229,8 @@ function _commerce_pos_gratuity_payment_form_alter(&$form, $form_state) {
         '#value' => '$',
         '#ajax' => $form_ajax,
         '#element_key' => 'add-order-fixed-gratuity',
+        '#prefix' => "<div class='commerce-pos-gratuity-fixed-button'>",
+        '#suffix' => "</div>",
       );
 
       if ($gratuity_data) {

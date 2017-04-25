@@ -132,6 +132,41 @@
     margin: 25px 0 0 0;
     padding: 20px 0 0 0;
   }
+
+  //Gratuities
+  #commerce-pos-gratuity-add-order-gratuity-wrapper {
+    clear: both;
+
+    .commerce-pos-gratuity-label {
+      clear: both;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .commerce-pos-gratuity-input {
+      width: 25%;
+      float: left;
+    }
+    .commerce-pos-gratuity-percent-button {
+      width: 35%;
+      float: left;
+      margin: 0 0 0 2%;
+
+      input {
+        padding: 8px 0;
+        background: #337ab7;
+      }
+    }
+    .commerce-pos-gratuity-fixed-button {
+      width: 35%;
+      float: left;
+      margin: 0 0 0 2%;
+
+      input {
+        padding: 8px 0;
+        background: #337ab7;
+      }
+    }
+  }
 }
 
 // To Pay - Color changes based on balance.
