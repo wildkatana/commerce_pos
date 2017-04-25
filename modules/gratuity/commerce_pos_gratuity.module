@@ -76,7 +76,7 @@ function commerce_pos_gratuity_commerce_pos_balance_summary_row_info_alter(&$row
       // Add action button for applying change as gratuity.
       $new_action = array(
         array(
-          'data' => '<a href="#" class="commerce-pos-apply-change-gratuity button-link small">' . t('add as gratuity') . '</a>',
+          'data' => '<a href="#" class="commerce-pos-apply-change-gratuity button-link small"><span>' . t('add as gratuity') . '</span></a>',
           'class' => array('action'),
         ),
       );
