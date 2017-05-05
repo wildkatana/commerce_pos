@@ -1005,3 +1005,339 @@ function commerce_pos_report_build_journal_role_table(array $filters = array()) 
     );
   }
 }
+
+/**
+ * Form constructor for the KPI report.
+ */
+function commerce_pos_report_kpi($form, &$form_state) {
+  global $user;
+
+  $form['#tree'] = TRUE;
+  $form['header'] = array(
+    '#markup' => theme('commerce_pos_header', array('account' => $user)),
+  );
+
+  $query_filter_defaults = array(
+    'date' => format_date(REQUEST_TIME, 'custom', 'Y-m-d'),
+    'cashier' => 'all',
+    'results_per_page' => -1,
+  );
+
+  $query_params = drupal_get_query_parameters() + $query_filter_defaults;
+
+  $form['filters'] = array(
+    '#type' => 'container',
+  );
+
+  if (!isset($form_state['results_container_id'])) {
+    $form_state['results_container_id'] = 'commerce-pos-report-kpi-container';
+  }
+
+  $js_settings = array(
+    'commercePosReport' => array(
+      'cssUrl' => url(drupal_get_path('module', 'commerce_pos_report') . '/css/commerce_pos_report_receipt.css', array(
+        'absolute' => TRUE,
+      )),
+    ),
+  );
+
+  $form['#attached']['libraries_load'][] = array('jquery-print');
+  $form['#attached']['css'][] = drupal_get_path('module', 'commerce_pos') . '/css/commerce_pos_style.css';
+  $form['#attached']['css'][] = drupal_get_path('module', 'commerce_pos_report') . '/css/commerce_pos_report.css';
+  // TODO - Add a js file for this.
+  //$form['#attached']['js'][] = drupal_get_path('module', 'commerce_pos_report') . '/js/commerce_pos_report.journal_role.js';
+  $form['#attached']['js'][] = array(
+    'type' => 'setting',
+    'data' => $js_settings,
+  );
+
+  $form['filters']['date_header'] = array(
+    '#type' => 'item',
+    '#title' => t('Transaction Date'),
+    '#prefix' => '<div class="commerce-pos-report-transaction-date-header">',
+    '#suffix' => '</div>',
+  );
+
+  $form['filters']['date'] = array(
+    '#type' => 'date_select',
+    '#title' => t('Transaction Date'),
+    '#title_display' => 'invisible',
+    '#date_format' => 'Y-m-d',
+    '#default_value' => $query_params['date'],
+    '#element_key' => 'date_completed',
+    '#attributes' => array(
+      'class' => array('commerce-pos-report-kpi-filter'),
+    ),
+  );
+
+  $form['report-options'] = array(
+    '#theme' => 'commerce_pos_report_options',
+  );
+
+  $form['options'] = array(
+    '#type' => 'container',
+    '#id' => 'commerce-pos-report-kpi-options-container',
+  );
+
+  $cashier_options = array(
+    'all' => t('All'),
+  );
+
+  $cashier_options += commerce_pos_cashiers_get_cashiers();
+
+  $form['options']['cashier'] = array(
+    '#type' => 'select',
+    '#title' => t('Cashier'),
+    '#default_value' => $query_params['cashier'],
+    '#options' => $cashier_options,
+    '#attributes' => array(
+      'class' => array('commerce-pos-report-kpi-filter'),
+    ),
+  );
+
+  $form['options']['results_per_page'] = array(
+    '#type' => 'select',
+    '#title' => t('Items per page'),
+    '#options' => array(
+      25 => '25',
+      50 => '50',
+      100 => '100',
+      500 => '500',
+      -1 => t('all'),
+    ),
+    '#default_value' => $query_params['results_per_page'],
+    '#attributes' => array(
+      'class' => array('commerce-pos-report-kpi-filter'),
+    ),
+  );
+
+  $form['results'] = array(
+    '#type' => 'container',
+    '#id' => $form_state['results_container_id'],
+  );
+
+  $header = array(
+    array('data' => t('Employee'), 'field' => 'u.name'),
+    array('data' => t('Net Sales')),
+    array('data' => t('Transactions')),
+    array('data' => t('Items Sold')),
+    array('data' => t('Units Per Trans')),
+    array('data' => t('Amount Per Trans')),
+    array(
+      'data' => t('Order Total'),
+      'field' => 'ot.commerce_order_total_amount'
+    ),
+  );
+
+  $query = db_select('commerce_pos_transaction', 't')
+    ->extend('PagerDefault')
+    ->extend('TableSort');
+
+  if ($query_params['results_per_page'] > 0) {
+    $query->limit($query_params['results_per_page']);
+  }
+  $query->fields('t', array('order_id', 'completed', 'uid', 'type'));
+
+  // Cashier data
+  // We left join because legacy transactions may not have a cashier.
+  $query->leftJoin('commerce_pos_cashier', 'cashier', 'cashier.cashier_id = t.cashier');
+  $query->addField('cashier', 'name', 'cashier');
+
+  // Payment transaction data.
+  $query->join('commerce_payment_transaction', 'pt', 'pt.order_id = t.order_id');
+  $query->fields('pt', array('transaction_id'));
+
+  // Join order data.
+  $query->join('commerce_order', 'o', 'o.order_id = t.order_id');
+  $query->leftJoin('users', 'customer', 'customer.uid = o.uid');
+  $query->addField('customer', 'mail', 'customer_mail');
+
+  // Join order total data.
+  $query->join('field_data_commerce_order_total', 'ot', 't.order_id = ot.entity_id AND ot.entity_type = :commerce_order', array(
+    ':commerce_order' => 'commerce_order',
+  ));
+  $query->fields('ot', array(
+    'commerce_order_total_amount',
+    'commerce_order_total_currency_code',
+    'commerce_order_total_data'
+  ));
+
+  // Join line item data.
+  $query->join('commerce_line_item', 'l', 'l.order_id = t.order_id');
+  $query->addExpression('COUNT(DISTINCT l.line_item_id)', 'item_count');
+
+  $line_item_types = commerce_product_line_item_types();
+  $query->condition('l.type', $line_item_types, 'IN');
+
+  // Make sure line item count is aggregated.
+  $query->groupBy('l.order_id');
+
+  // Set up our filters/conditions.
+  if (!empty($filters['date'])) {
+    $date_timestamp = strtotime($filters['date']);
+    $query->condition('completed', $date_timestamp, '>=');
+    $query->condition('completed', strtotime('+1 day', $date_timestamp), '<');
+  }
+
+  if (!empty($filters['cashier']) && $filters['cashier'] != 'all') {
+    $query->condition('cashier.cashier_id', $filters['cashier']);
+  }
+
+  $query->condition('completed', '0', '>');
+  $query->orderByHeader($header);
+
+  $result = $query->execute();
+
+  $rows = array();
+  $totals = array(
+    'purchased' => 0,
+    'returned' => 0,
+    'order_total' => array(),
+  );
+
+  if ($result->rowCount() > 0) {
+    foreach ($result as $row) {
+      $table_row = array();
+
+      $return_count = 0;
+      $purchase_count = 0;
+
+      switch ($row->type) {
+        case CommercePosService::TRANSACTION_TYPE_RETURN:
+          $return_count = $row->item_count;
+          break;
+
+        default:
+          $purchase_count = $row->item_count;
+          break;
+      }
+
+      // Build order ID link.
+      $table_row[] = l($row->order_id, '/admin/commerce/pos/report/ajax/order-details/' . $row->order_id, array(
+        'external' => TRUE,
+        'attributes' => array(
+          'class' => array('commerce-pos-report-journal-role-order use-ajax'),
+          'data-order-id' => $row->order_id,
+        )
+      ));
+
+      $table_row[] = format_date($row->completed, 'custom', 'g:i a');
+
+      // Payment type.
+      $table_row[] = commerce_pos_report_payment_types($row->order_id);
+
+      // Cashier.
+      $table_row[] = $row->cashier;
+
+      $table_row[] = !empty($row->customer_mail) ? $row->customer_mail : t('Anonymous');
+
+      // Purchased.
+      $table_row[] = $purchase_count;
+
+      // Returned.
+      $table_row[] = $return_count;
+
+      // Discount flag.
+      $order_total_data = unserialize($row->commerce_order_total_data);
+      $has_discount = FALSE;
+
+      if (!empty($order_total_data['components'])) {
+        foreach ($order_total_data['components'] as $component) {
+          if (!empty($component['name']) && strpos($component['name'], 'discount|') === 0) {
+            $has_discount = TRUE;
+            break;
+          }
+        }
+      }
+
+      $table_row[] = $has_discount ? '<span class="commerce-pos-report-ico-checked"></span>' : '';
+
+      // Order total.
+      $table_row[] = commerce_currency_format($row->commerce_order_total_amount, $row->commerce_order_total_currency_code);
+
+      $rows[] = array(
+        'data' => $table_row,
+        'class' => array('commerce-pos-transaction-type-' . $row->type),
+      );
+
+      // Add another row right below that will serve as a placeholder for loading
+      // in order data.
+      $rows[] = array(
+        array(
+          'colspan' => count($table_row),
+          'class' => array(
+            'commerce-pos-report-journal-role-order-info',
+            'element-invisible'
+          ),
+          'data-order-id' => $row->order_id,
+        ),
+      );
+
+      $totals['purchased'] += $purchase_count;
+      $totals['returned'] += $return_count;
+
+      if (!isset($totals['order_total'][$row->commerce_order_total_currency_code])) {
+        $totals['order_total'][$row->commerce_order_total_currency_code] = $row->commerce_order_total_amount;
+      }
+      else {
+        $totals['order_total'][$row->commerce_order_total_currency_code] += $row->commerce_order_total_amount;
+      }
+    }
+
+    // Add a row for some totals.
+    $order_totals_summary = array();
+
+    foreach ($totals['order_total'] as $currency_code => $amount) {
+      $order_totals_summary[] = commerce_currency_format($amount, $currency_code);
+    }
+
+    $rows[] = array(
+      '',
+      '',
+      '',
+      '',
+      '',
+      $totals['purchased'],
+      $totals['returned'],
+      '',
+      implode('<br>', $order_totals_summary),
+    );
+  }
+
+  $form['results']['table'] = array(
+    '#theme' => 'table',
+    '#rows' => $rows,
+    '#header' => $header,
+    '#attached' => array(
+      'js' => array(
+        //drupal_get_path('module', 'commerce_pos_report') . '/js/commerce_pos_report.journal_role.js',
+      ),
+      'library' => array(
+        array('system', 'drupal.ajax'),
+      ),
+    ),
+  );
+
+  // Pager has to come after we've build the kpi table.
+  $form['options']['pager'] = array('#theme' => 'pager');
+  $form['results']['pager'] = array('#theme' => 'pager');
+
+  $form['submit'] = array(
+    '#value' => t('Submit'),
+    '#type' => 'submit',
+    '#weight' => -50,
+    '#attributes' => array(
+      'class' => array('element-invisible', 'commerce-pos-report-kpi-submit'),
+    ),
+  );
+
+  return $form;
+}
+
+/**
+ * Form submission handler for the kpi report form.
+ */
+function commerce_pos_report_kpi_submit($form, &$form_state) {
+  $query_params = array_merge(drupal_get_query_parameters(), $form_state['values']['filters'], $form_state['values']['options']);
+  $form_state['redirect'] = array(current_path(), array('query' => $query_params));
+}

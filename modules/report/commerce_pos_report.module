@@ -25,6 +25,13 @@ function commerce_pos_report_menu() {
     'file' => 'includes/commerce_pos_report.pages.inc',
     'access arguments' => array('view commerce pos reports'),
   );
+  $items['admin/commerce/pos/reports/kpi'] = array(
+    'title' => 'KPI Report',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_pos_report_kpi'),
+    'file' => 'includes/commerce_pos_report.pages.inc',
+    'access arguments' => array('view commerce pos reports'),
+  );
   $items['admin/commerce/pos/reports/journal-role'] = array(
     'title' => 'Journal Role',
     'page callback' => 'drupal_get_form',
